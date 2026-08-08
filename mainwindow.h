@@ -65,6 +65,8 @@ private slots:
     void onAnchor();
     void onAttack();
     void sweepStep();
+    void onBuildMerkle();
+    void onGenerateProof();
 
 private:
     LogChain m_chain;
@@ -72,10 +74,11 @@ private:
     ChainCanvas   *m_canvas;
     QLabel        *m_banner;
     QPlainTextEdit*m_console;
-    QLineEdit     *m_actorIn, *m_actionIn, *m_detailIn;
+    QLineEdit     *m_actorIn, *m_actionIn, *m_detailIn,*m_proofIn;
 
     // Telemetry readouts
-    QLabel *m_statEntries, *m_statHead, *m_statAnchor, *m_statIntegrity, *m_statLast;
+    QLabel *m_statEntries, *m_statHead, *m_statAnchor, *m_statIntegrity, *m_statLast,*m_statRoot;
+
 
     QTimer *m_sweep;
     int m_sweepIndex = 0;

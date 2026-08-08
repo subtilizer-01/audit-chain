@@ -307,6 +307,135 @@ public:
 
     int size() const { return entries.size(); }
     const LogEntry& at(int i) const { return entries[i]; }
+
+    // ─── Merkle tree ──────────────────────────────────────────────────────
+    // The hash chain proves the whole log is intact, but to prove ONE entry
+    // belongs you would have to hand over every record. A Merkle tree fixes
+    // that: entry hashes are paired and hashed upward until a single root
+    // remains, so membership can be proven with ~log2(n) hashes instead of n.
+    // Same structure used by certificate transparency logs and git.
+
+    static string hashPair(const string& left, const string& right)
+    {
+        SHA256 sha;
+        sha.update(left + right);
+        return SHA256::toString(sha.digest());
+    }
+
+    // Bottom level of the tree: one leaf per entry.
+    vector<string> merkleLeaves() const
+    {
+        vector<string> leaves;
+        for (int i = 0; i < (int)entries.size(); i++)
+            leaves.push_back(entries[i].getEntryHash());
+        return leaves;
+    }
+
+    // Collapses the leaves upward, pairing as it goes. An odd node at any
+    // level is paired with itself, which keeps the tree balanced without
+    // inventing data.
+    string merkleRoot() const
+    {
+        vector<string> level = merkleLeaves();
+        if (level.empty()) return string(64, '0');
+
+        while (level.size() > 1) {
+            vector<string> next;
+            for (size_t i = 0; i < level.size(); i += 2) {
+                const string& left  = level[i];
+                const string& right = (i + 1 < level.size()) ? level[i + 1] : level[i];
+                next.push_back(hashPair(left, right));
+            }
+            level = next;
+        }
+        return level[0];
+    }
+
+    // One step of a proof: the sibling hash, and which side it sits on.
+    struct ProofStep {
+        string hash;
+        bool siblingIsRight;
+    };
+
+    // The sibling hashes needed to rebuild the root from one leaf. Everything
+    // else in the tree stays private - this is what makes the proof compact.
+    vector<ProofStep> merkleProof(int index) const
+    {
+        vector<ProofStep> proof;
+        if (index < 0 || index >= (int)entries.size()) return proof;
+
+        vector<string> level = merkleLeaves();
+        size_t pos = index;
+
+        while (level.size() > 1) {
+            const bool isLeft = (pos % 2 == 0);
+            const size_t siblingPos = isLeft ? pos + 1 : pos - 1;
+
+            ProofStep step;
+            step.siblingIsRight = isLeft;
+            step.hash = (siblingPos < level.size()) ? level[siblingPos] : level[pos];
+            proof.push_back(step);
+
+            vector<string> next;
+            for (size_t i = 0; i < level.size(); i += 2) {
+                const string& left  = level[i];
+                const string& right = (i + 1 < level.size()) ? level[i + 1] : level[i];
+                next.push_back(hashPair(left, right));
+            }
+            level = next;
+            pos /= 2;
+        }
+        return proof;
+    }
+
+    // Rebuilds the root from a leaf plus its proof path. If it matches the
+    // expected root, that leaf is provably part of the tree - without the
+    // verifier ever seeing the other entries.
+    static bool verifyMerkleProof(const string& leafHash,
+                                  const vector<ProofStep>& proof,
+                                  const string& expectedRoot)
+    {
+        string running = leafHash;
+        for (size_t i = 0; i < proof.size(); i++) {
+            running = proof[i].siblingIsRight
+                          ? hashPair(running, proof[i].hash)
+                          : hashPair(proof[i].hash, running);
+        }
+        return running == expectedRoot;
+    }
+
+    // Anchoring the ROOT is strictly stronger than anchoring the head hash:
+    // the root commits to every entry, so altering any one of them changes it.
+    bool saveMerkleAnchor(string anchorFile) const
+    {
+        if (entries.empty()) return false;
+        ofstream out(anchorFile);
+        if (!out) return false;
+        out << entries.size() << "\n" << merkleRoot() << "\n";
+        return true;
+    }
+
+    bool verifyAgainstMerkleAnchor(string anchorFile, string& detailOut) const
+    {
+        ifstream in(anchorFile);
+        if (!in) { detailOut = "no merkle anchor found"; return false; }
+
+        int anchoredCount;
+        string anchoredRoot;
+        in >> anchoredCount >> anchoredRoot;
+
+        if (anchoredCount != (int)entries.size()) {
+            detailOut = "entry count changed since anchoring ("
+                        + to_string(anchoredCount) + " -> " + to_string(entries.size()) + ")";
+            return false;
+        }
+        if (merkleRoot() != anchoredRoot) {
+            detailOut = "merkle root does not match the anchored root";
+            return false;
+        }
+        detailOut = "merkle root matches";
+        return true;
+    }
 };
 
 #endif // LOGCHAIN_H

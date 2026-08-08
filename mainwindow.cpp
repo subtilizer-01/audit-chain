@@ -1,5 +1,5 @@
 #include "mainwindow.h"
-
+#include <QDebug>
 #include <QPainter>
 #include <QPainterPath>
 #include <QVBoxLayout>
@@ -326,33 +326,33 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
 void MainWindow::buildUi()
 {
     setWindowTitle("AUDIT CHAIN \u2014 integrity console");
-    resize(1220, 760);
+    resize(1320, 780);
     setMinimumHeight(600);
+
     auto *central = new QWidget;
-    central->setStyleSheet("background:#05080a;");
+    central->setStyleSheet("QWidget { background:#05080a; }");
     auto *root = new QVBoxLayout(central);
     root->setContentsMargins(0, 0, 0, 0);
     root->setSpacing(0);
 
-    // ── Header bar ─────────────────────────────────────────
+    // ── Header ─────────────────────────────────────────────
     auto *header = new QWidget;
     header->setFixedHeight(64);
-    header->setStyleSheet(
-        "background:qlineargradient(x1:0,y1:0,x2:1,y2:0,"
-        " stop:0 #070c10, stop:1 #05080a);"
-        "border-bottom:1px solid #16242e;");
+    header->setStyleSheet("QWidget { background:#070c10; border-bottom:1px solid #16242e; }");
     auto *hl = new QHBoxLayout(header);
     hl->setContentsMargins(22, 0, 22, 0);
 
     auto *brand = new QLabel("A U D I T   C H A I N");
-    brand->setStyleSheet("color:#00e5ff; font:700 16px 'Consolas'; letter-spacing:3px;");
+    brand->setStyleSheet("QLabel { color:#00e5ff; font-family:Consolas; font-size:16px;"
+                         " font-weight:700; letter-spacing:3px; border:none; background:transparent; }");
     auto *bfx = new QGraphicsDropShadowEffect(brand);
     bfx->setBlurRadius(26); bfx->setOffset(0, 0);
     bfx->setColor(QColor(0, 229, 255, 190));
     brand->setGraphicsEffect(bfx);
 
     auto *tagline = new QLabel("  //  SHA-256 HASH-CHAINED LOG  \u00B7  TAMPER-EVIDENT");
-    tagline->setStyleSheet("color:#7f9aab; font:11px 'Consolas'; letter-spacing:2px;");
+    tagline->setStyleSheet("QLabel { color:#7f9aab; font-family:Consolas; font-size:11px;"
+                           " letter-spacing:2px; border:none; background:transparent; }");
 
     hl->addWidget(brand);
     hl->addWidget(tagline);
@@ -370,63 +370,93 @@ void MainWindow::buildUi()
     root->addWidget(bannerWrap);
     setBanner("SYSTEM READY  \u00B7  AWAITING VERIFICATION", 0);
 
-    // ── Body: canvas | side rail ───────────────────────────
+    // ── Body: [chain + console] | rail ─────────────────────
     auto *body = new QHBoxLayout;
-    body->setContentsMargins(22, 6, 22, 0);
+    body->setContentsMargins(22, 6, 22, 16);
     body->setSpacing(16);
 
     auto *scroll = new QScrollArea;
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setStyleSheet(
-        "QScrollArea{background:#05080a;}"
+        "QScrollArea{background:#05080a;border:none;}"
         "QScrollBar:vertical{background:#05080a;width:7px;}"
         "QScrollBar::handle:vertical{background:#16242e;border-radius:3px;min-height:40px;}"
         "QScrollBar::add-line,QScrollBar::sub-line{height:0;}");
     m_canvas = new ChainCanvas;
     scroll->setWidget(m_canvas);
-    body->addWidget(scroll, 3);
-
-    auto *rail = new QWidget;
-    rail->setFixedWidth(310);
-    rail->setStyleSheet("background:#080d11; border:1px solid #16242e; border-radius:5px;");
-    auto *rl = new QVBoxLayout(rail);
-    rl->setContentsMargins(16, 16, 16, 16);
-    rl->setSpacing(10);
 
     auto sectionLabel = [](const QString &t) {
         auto *l = new QLabel(t);
-        l->setStyleSheet("color:#7f9aab; font:700 10px 'Consolas'; letter-spacing:2px;");
+        l->setMinimumHeight(26);
+        l->setAlignment(Qt::AlignBottom | Qt::AlignLeft);
+        l->setStyleSheet("QLabel{color:#7f9aab;background:transparent;border:none;"
+                         "font-family:Consolas;font-size:10px;font-weight:700;letter-spacing:2px;}");
         return l;
     };
 
+    // Chain and console stacked on the left so the rail runs the full height.
+    auto *leftCol = new QWidget;
+    auto *leftLayout = new QVBoxLayout(leftCol);
+    leftLayout->setContentsMargins(0, 0, 0, 0);
+    leftLayout->setSpacing(6);
+    leftLayout->addWidget(scroll, 1);
+    leftLayout->addWidget(sectionLabel("VERIFICATION LOG"));
+
+    m_console = new QPlainTextEdit;
+    m_console->setReadOnly(true);
+    m_console->setFixedHeight(120);
+    m_console->setStyleSheet(
+        "QPlainTextEdit{background:#070c10;color:#a8c0ce;border:1px solid #16242e;"
+        "border-radius:4px;font-family:Consolas;font-size:11px;padding:8px;}"
+        "QScrollBar:vertical{background:#070c10;width:7px;}"
+        "QScrollBar::handle:vertical{background:#16242e;border-radius:3px;}"
+        "QScrollBar::add-line,QScrollBar::sub-line{height:0;}");
+    leftLayout->addWidget(m_console);
+
+    body->addWidget(leftCol, 3);
+
+    // ── Side rail ──────────────────────────────────────────
+    auto *rail = new QWidget;
+    auto *rl = new QVBoxLayout(rail);
+    rl->setContentsMargins(16, 16, 16, 16);
+    rl->setSpacing(6);
+
     rl->addWidget(sectionLabel("TELEMETRY"));
 
-    auto *statGrid = new QGridLayout;
-    statGrid->setVerticalSpacing(9);
-    statGrid->setHorizontalSpacing(8);
-
-    auto addStat = [&](int row, const QString &key, QLabel *&valueOut,
+    auto addStat = [&](const QString &key, QLabel *&valueOut,
                        const QString &initial, const QString &colour) {
+        auto *rowW = new QWidget;
+        auto *h = new QHBoxLayout(rowW);
+        h->setContentsMargins(0, 0, 0, 0);
+        h->setSpacing(6);
+
         auto *k = new QLabel(key);
-        k->setStyleSheet("color:#8aa5b5; font:10px 'Consolas'; letter-spacing:1px;");
+        k->setStyleSheet("QLabel{color:#8aa5b5;background:transparent;border:none;"
+                         "font-family:Consolas;font-size:10px;}");
+
         valueOut = new QLabel(initial);
-        valueOut->setStyleSheet(QString("color:%1; font:11px 'Consolas';").arg(colour));
+        valueOut->setStyleSheet(QString("QLabel{color:%1;background:transparent;border:none;"
+                                        "font-family:Consolas;font-size:11px;}").arg(colour));
         valueOut->setAlignment(Qt::AlignRight);
-        statGrid->addWidget(k, row, 0);
-        statGrid->addWidget(valueOut, row, 1);
+
+        h->addWidget(k);
+        h->addStretch();
+        h->addWidget(valueOut);
+        rowW->setFixedHeight(18);
+        rl->addWidget(rowW);
     };
 
-    addStat(0, "ENTRIES",   m_statEntries,   "0",       "#c9dbe6");
-    addStat(1, "HEAD",      m_statHead,      "\u2014",  "#00e5ff");
-    addStat(2, "ANCHOR",    m_statAnchor,    "\u2014",  "#ffb020");
-    addStat(3, "INTEGRITY", m_statIntegrity, "UNKNOWN", "#8aa5b5");
-    addStat(4, "LAST SCAN", m_statLast,      "never",   "#8aa5b5");
-    rl->addLayout(statGrid);
+    addStat("ENTRIES",     m_statEntries,   "0",       "#c9dbe6");
+    addStat("HEAD",        m_statHead,      "\u2014",  "#00e5ff");
+    addStat("ANCHOR",      m_statAnchor,    "\u2014",  "#ffb020");
+    addStat("INTEGRITY",   m_statIntegrity, "UNKNOWN", "#8aa5b5");
+    addStat("LAST SCAN",   m_statLast,      "never",   "#8aa5b5");
+    addStat("MERKLE ROOT", m_statRoot,      "\u2014",  "#00ff9c");
 
     auto *sep = new QFrame;
-    sep->setFrameShape(QFrame::HLine);
-    sep->setStyleSheet("background:#16242e; border:none; max-height:1px;");
+    sep->setFixedHeight(1);
+    sep->setStyleSheet("QFrame{background:#16242e;border:none;}");
     rl->addWidget(sep);
 
     rl->addWidget(sectionLabel("OPERATIONS"));
@@ -434,11 +464,11 @@ void MainWindow::buildUi()
     auto mkBtn = [&](const QString &text, const QString &accent) {
         auto *b = new QPushButton(text);
         b->setCursor(Qt::PointingHandCursor);
-        b->setFixedHeight(36);
+        b->setFixedHeight(34);
         b->setStyleSheet(QString(
                              "QPushButton{background:#0a1015;color:%1;border:1px solid #16242e;"
-                             " border-radius:4px;font:11px 'Consolas';letter-spacing:2px;text-align:left;"
-                             " padding-left:12px;}"
+                             "border-radius:4px;font-family:Consolas;font-size:11px;letter-spacing:2px;"
+                             "text-align:left;padding-left:12px;}"
                              "QPushButton:hover{border-color:%1;background:#0d151b;}"
                              "QPushButton:pressed{background:#060a0d;}").arg(accent));
         rl->addWidget(b);
@@ -449,63 +479,80 @@ void MainWindow::buildUi()
     auto *bLoad   = mkBtn("\u25A4  LOAD LOG FILE",    "#c9dbe6");
     auto *bAnchor = mkBtn("\u2693  WRITE ANCHOR",      "#ffb020");
     auto *bAttack = mkBtn("\u26A0  SIMULATE ATTACK",   "#ff2d55");
+    auto *bMerkle = mkBtn("\u2637  BUILD MERKLE TREE", "#00e5ff");
 
     connect(bVerify, &QPushButton::clicked, this, &MainWindow::onVerify);
     connect(bLoad,   &QPushButton::clicked, this, &MainWindow::onLoad);
     connect(bAnchor, &QPushButton::clicked, this, &MainWindow::onAnchor);
     connect(bAttack, &QPushButton::clicked, this, &MainWindow::onAttack);
+    connect(bMerkle, &QPushButton::clicked, this, &MainWindow::onBuildMerkle);
 
     auto *sep2 = new QFrame;
-    sep2->setFrameShape(QFrame::HLine);
-    sep2->setStyleSheet("background:#16242e; border:none; max-height:1px;");
+    sep2->setFixedHeight(1);
+    sep2->setStyleSheet("QFrame{background:#16242e;border:none;}");
     rl->addWidget(sep2);
 
-    rl->addWidget(sectionLabel("APPEND RECORD"));
+    rl->addWidget(sectionLabel("APPEND / PROVE"));
 
     auto mkInput = [&](const QString &ph) {
         auto *e = new QLineEdit;
         e->setPlaceholderText(ph);
-        e->setFixedHeight(32);
+        e->setFixedHeight(28);
         e->setStyleSheet(
             "QLineEdit{background:#05080a;color:#c9dbe6;border:1px solid #16242e;"
-            " border-radius:4px;padding:0 9px;font:11px 'Consolas';}"
+            "border-radius:4px;padding:0 8px;font-family:Consolas;font-size:10px;}"
             "QLineEdit:focus{border-color:#00e5ff;}");
-        rl->addWidget(e);
         return e;
     };
 
     m_actorIn  = mkInput("actor");
     m_actionIn = mkInput("action");
+    auto *rowAB = new QWidget;
+    auto *hAB = new QHBoxLayout(rowAB);
+    hAB->setContentsMargins(0, 0, 0, 0);
+    hAB->setSpacing(6);
+    hAB->addWidget(m_actorIn);
+    hAB->addWidget(m_actionIn);
+    rl->addWidget(rowAB);
+
     m_detailIn = mkInput("detail");
+    rl->addWidget(m_detailIn);
 
     auto *bAdd = mkBtn("+  APPEND TO CHAIN", "#00e5ff");
     connect(bAdd, &QPushButton::clicked, this, &MainWindow::onAppend);
 
+    m_proofIn = mkInput("entry #");
+    auto *bProof = new QPushButton("\u26AF  PROVE");
+    bProof->setCursor(Qt::PointingHandCursor);
+    bProof->setFixedHeight(28);
+    bProof->setStyleSheet(
+        "QPushButton{background:#0a1015;color:#00ff9c;border:1px solid #16242e;"
+        "border-radius:4px;font-family:Consolas;font-size:10px;letter-spacing:1px;}"
+        "QPushButton:hover{border-color:#00ff9c;background:#0d151b;}");
+    auto *rowP = new QWidget;
+    auto *hP = new QHBoxLayout(rowP);
+    hP->setContentsMargins(0, 0, 0, 0);
+    hP->setSpacing(6);
+    hP->addWidget(m_proofIn, 1);
+    hP->addWidget(bProof, 1);
+    rl->addWidget(rowP);
+    connect(bProof, &QPushButton::clicked, this, &MainWindow::onGenerateProof);
+
     rl->addStretch();
-    body->addWidget(rail);
-    root->addLayout(body, 1);
 
-    // ── Console ────────────────────────────────────────────
-    auto *consoleWrap = new QWidget;
-    auto *cwl = new QVBoxLayout(consoleWrap);
-    cwl->setContentsMargins(22, 12, 22, 16);
-    cwl->setSpacing(5);
-
-    auto *cLabel = new QLabel("VERIFICATION LOG");
-    cLabel->setStyleSheet("color:#7f9aab; font:700 10px 'Consolas'; letter-spacing:2px;");
-    cwl->addWidget(cLabel);
-
-    m_console = new QPlainTextEdit;
-    m_console->setReadOnly(true);
-    m_console->setFixedHeight(110);
-    m_console->setStyleSheet(
-        "QPlainTextEdit{background:#070c10;color:#a8c0ce;border:1px solid #16242e;"
-        " border-radius:4px;font:11px 'Consolas';padding:8px;}"
-        "QScrollBar:vertical{background:#070c10;width:7px;}"
-        "QScrollBar::handle:vertical{background:#16242e;border-radius:3px;}"
+    auto *railScroll = new QScrollArea;
+    railScroll->setWidgetResizable(true);
+    railScroll->setFrameShape(QFrame::NoFrame);
+    railScroll->setFixedWidth(316);
+    railScroll->setStyleSheet(
+        "QScrollArea{background:#080d11;border:1px solid #16242e;border-radius:5px;}"
+        "QScrollBar:vertical{background:#080d11;width:7px;}"
+        "QScrollBar::handle:vertical{background:#16242e;border-radius:3px;min-height:30px;}"
         "QScrollBar::add-line,QScrollBar::sub-line{height:0;}");
-    cwl->addWidget(m_console);
-    root->addWidget(consoleWrap);
+    railScroll->setWidget(rail);
+    body->addWidget(railScroll);
+
+    root->addLayout(body, 1);
 
     setCentralWidget(central);
 
@@ -714,4 +761,58 @@ void MainWindow::onAttack()
     setTelemetry("UNKNOWN", "#3d5566");
     log("attacker recomputed every hash downstream", "#ff2d55");
     log("chain now passes internal verification \u2014 run VERIFY", "#ffb020");
+}
+
+void MainWindow::onBuildMerkle()
+{
+    if (m_chain.size() == 0) { setBanner("NO CHAIN LOADED", 2); return; }
+
+    const QString root = QString::fromStdString(m_chain.merkleRoot());
+    m_statRoot->setText(clip(root, 8, 6));
+    m_chain.saveMerkleAnchor("merkle_anchor.txt");
+
+    setBanner("MERKLE ROOT COMPUTED \u00B7 TREE ANCHORED", 0);
+    log(QString("merkle root: %1").arg(root), "#00e5ff");
+    log(QString("tree height %1 over %2 leaves \u2014 proof size ~%1 hashes")
+            .arg(m_chain.merkleProof(0).size()).arg(m_chain.size()), "#a8c0ce");
+    log("root written to merkle_anchor.txt", "#ffb020");
+}
+
+void MainWindow::onGenerateProof()
+{
+    if (m_chain.size() == 0) { setBanner("NO CHAIN LOADED", 2); return; }
+
+    bool ok = false;
+    const int seq = m_proofIn->text().trimmed().toInt(&ok);
+    if (!ok || seq < 1 || seq > m_chain.size()) {
+        log(QString("enter an entry number between 1 and %1").arg(m_chain.size()), "#ffb020");
+        return;
+    }
+
+    const int index = seq - 1;
+    const auto proof = m_chain.merkleProof(index);
+    const string leaf = m_chain.at(index).getEntryHash();
+    const string root = m_chain.merkleRoot();
+
+    log(QString("generating inclusion proof for entry %1").arg(seq), "#00e5ff");
+    log(QString("leaf  %1").arg(clip(QString::fromStdString(leaf), 10, 8)), "#a8c0ce");
+
+    for (size_t i = 0; i < proof.size(); i++) {
+        log(QString("  step %1  sibling(%2)  %3")
+                .arg(i + 1)
+                .arg(proof[i].siblingIsRight ? "right" : "left ")
+                .arg(clip(QString::fromStdString(proof[i].hash), 10, 8)), "#8aa5b5");
+    }
+
+    const bool valid = LogChain::verifyMerkleProof(leaf, proof, root);
+
+    if (valid) {
+        setBanner(QString("PROOF VALID \u00B7 ENTRY %1 IS IN THE TREE").arg(seq), 1);
+        log(QString("%1 sibling hashes reconstruct the root \u2014 entry %2 proven "
+                    "without revealing the other %3 entries")
+                .arg(proof.size()).arg(seq).arg(m_chain.size() - 1), "#00ff9c");
+    } else {
+        setBanner(QString("PROOF FAILED \u00B7 ENTRY %1").arg(seq), 2);
+        log("reconstructed root does not match \u2014 entry is not in this tree", "#ff2d55");
+    }
 }
